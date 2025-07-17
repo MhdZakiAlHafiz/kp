@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\data_proyek;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class data_proyekController extends Controller
 {
@@ -39,10 +40,12 @@ class data_proyekController extends Controller
         ]);
 
         $tahun = date('Y');
+        // Menghitung jumlah proyek dengan jenis surat dan tahun yang sama untuk generate nomor CR
         $count = data_proyek::where('nomor_cr', 'LIKE', '%/' . $data['jenis_surat'] . '/TSI/' . $tahun)->count();
         $nextNumber = str_pad($count + 1, 2, '0', STR_PAD_LEFT);
         $data['nomor_cr'] = $nextNumber . '/' . $data['jenis_surat'] . '/TSI/' . $tahun;
 
+        // Menentukan status berdasarkan progres awal
         $progress = $data['progres'] ?? 0;
         if ($progress == 0) {
             $data['status'] = 'Not Started';
@@ -52,6 +55,7 @@ class data_proyekController extends Controller
             $data['status'] = 'Completed';
         }
 
+        // Inisialisasi struktur kegiatan_detail yang bersarang dalam format JSON
         $data['kegiatan_detail'] = json_encode([
             [
                 "no" => "1",
@@ -71,6 +75,7 @@ class data_proyekController extends Controller
             ["no" => "7", "kegiatan" => "TO", "bobot" => 5],
         ]);
 
+        // Membuat entri data proyek baru di database
         data_proyek::create($data);
 
         return redirect('/data_proyek')->with('sukses', 'menambahkan data');
@@ -79,6 +84,7 @@ class data_proyekController extends Controller
     public function generateNomorCr($jenis_surat)
     {
         $tahun = date('Y');
+        // Menghitung jumlah proyek dengan jenis surat dan tahun yang sama
         $count = data_proyek::where('nomor_cr', 'LIKE', '%/' . $jenis_surat . '/TSI/' . $tahun)->count();
         $nextNumber = str_pad($count + 1, 2, '0', STR_PAD_LEFT);
 
@@ -126,42 +132,208 @@ class data_proyekController extends Controller
     public function kegiatanDetail($id)
     {
         $data_proyek = data_proyek::findOrFail($id);
-        $kegiatan_detail = json_decode($data_proyek->kegiatan_detail, true) ?? []; // ← Tambahkan `json_decode(..., true)` dan fallback `[]`
+        // Mendekode kegiatan_detail dari JSON menjadi array PHP bersarang
+        $nested_kegiatan_detail = json_decode($data_proyek->kegiatan_detail, true) ?? [];
 
-        return view('pages.data_proyek.kegiatan_detail', compact('data_proyek', 'kegiatan_detail'));
+        // Fungsi pembantu untuk menghitung progres kegiatan bersarang secara rekursif
+        $calculateNestedProgress = function (&$items) use (&$calculateNestedProgress, $data_proyek) {
+            foreach ($items as &$item) {
+                // Inisialisasi progres jika belum diatur
+                $item['progress'] = $item['progress'] ?? 0;
+
+                // Jika kegiatan memiliki sub-kegiatan dan merupakan kegiatan "Pengerjaan Dokumen" (no = 1)
+                if (isset($item['sub']) && is_array($item['sub']) && !empty($item['sub']) && $item['no'] === "1") {
+                    // Rekursif hitung progres untuk sub-kegiatan terlebih dahulu
+                    $calculateNestedProgress($item['sub']);
+
+                    // Logika: Progres Pengerjaan Dokumen adalah JUMLAH progres sub-kegiatan, dibatasi oleh bobotnya sendiri
+                    $sumOfSubProgresses = 0;
+                    foreach ($item['sub'] as $subItem) {
+                        $sumOfSubProgresses += ($subItem['progress'] ?? 0);
+                    }
+                    // Progres dibatasi oleh bobot kegiatan induk (misal: 20 untuk Pengerjaan Dokumen)
+                    $item['progress'] = min($item['bobot'], round($sumOfSubProgresses, 2));
+                    $item['__read_only_progress'] = true; // Tandai sebagai read-only untuk view
+                } else {
+                    $item['__read_only_progress'] = false; // Dapat diedit jika tidak ada sub-kegiatan atau bukan kegiatan no 1
+                }
+
+                // Inisialisasi field lain jika belum diatur
+                $item['plan_start'] = $item['plan_start'] ?? null;
+                $item['plan_end'] = $item['plan_end'] ?? null;
+                $item['actual_start'] = $item['actual_start'] ?? null;
+                $item['actual_end'] = $item['actual_end'] ?? null;
+
+                // --- Perubahan Baru: Mengisi Keterangan dan PIC dari data_proyek ---
+                // Jika keterangan belum ada di kegiatan_detail, ambil dari detail_pengembangan proyek utama
+                if (empty($item['keterangan'])) {
+                    $item['keterangan'] = $data_proyek->detail_pengembangan ?? null;
+                }
+
+                // Jika PIC belum ada di kegiatan_detail, gabungkan dari pic_perencana dan pic_pelaksana proyek utama
+                if (empty($item['pic'])) {
+                    $pic_parts = [];
+                    if (!empty($data_proyek->pic_perencana)) {
+                        $pic_parts[] = $data_proyek->pic_perencana;
+                    }
+                    if (!empty($data_proyek->pic_pelaksana)) {
+                        $pic_parts[] = $data_proyek->pic_pelaksana;
+                    }
+                    $item['pic'] = implode(', ', $pic_parts);
+                }
+                // --- Akhir Perubahan Baru ---
+            }
+        };
+
+        // Terapkan perhitungan rekursif ke kegiatan utama
+        $calculateNestedProgress($nested_kegiatan_detail);
+
+        // Sekarang ratakan struktur untuk view
+        $flattened_kegiatan_detail = [];
+        $index = 0;
+        $flattenForView = function ($items, $parentPath = '', $isSub = false) use (&$flattened_kegiatan_detail, &$index, &$flattenForView) {
+            foreach ($items as $key => $item) {
+                $currentPath = $parentPath === '' ? (string) $key : $parentPath . '.' . $key;
+
+                $item['__flat_index'] = $index;
+                $item['__is_sub'] = $isSub;
+                $item['__original_path'] = $currentPath;
+
+                $flattened_kegiatan_detail[] = $item;
+                $index++;
+
+                if (isset($item['sub']) && is_array($item['sub'])) {
+                    $flattenForView($item['sub'], $currentPath, true);
+                }
+            }
+        };
+
+        $flattenForView($nested_kegiatan_detail);
+
+        return view('pages.data_proyek.kegiatan_detail', [
+            'data_proyek' => $data_proyek,
+            'kegiatan_detail' => $flattened_kegiatan_detail, // Kirim array yang sudah diratakan ke view
+        ]);
     }
-
-
 
     public function updateKegiatanDetail(Request $request, $id)
     {
-        $data = $request->validate([
+        // Validasi data yang masuk dari form (array datar)
+        $validatedData = $request->validate([
             'kegiatan_detail' => ['required', 'array'],
+            'kegiatan_detail.*.no' => ['required'],
             'kegiatan_detail.*.kegiatan' => ['required'],
             'kegiatan_detail.*.bobot' => ['required', 'numeric'],
-            'kegiatan_detail.*.progress' => ['nullable', 'numeric'],
+            // Validasi progress: numeric, min 0, dan tidak boleh melebihi nilai bobot untuk baris tersebut
+            'kegiatan_detail.*.progress' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                function ($attribute, $value, $fail) use ($request) {
+                    // Ekstrak indeks dari nama atribut, misal: kegiatan_detail.0.progress -> 0
+                    preg_match('/kegiatan_detail\.(\d+)\.progress/', $attribute, $matches);
+                    $index = $matches[1];
+
+                    $bobot = $request->input("kegiatan_detail.{$index}.bobot");
+                    $kegiatan_no = $request->input("kegiatan_detail.{$index}.no");
+
+                    // Validasi ini hanya berlaku untuk kegiatan yang progresnya diinput manual
+                    // Kegiatan 'Pengerjaan Dokumen' (no=1) progresnya dihitung, bukan diinput
+                    if ($kegiatan_no !== "1" && $value > $bobot) {
+                        $fail("Progres untuk kegiatan " . $kegiatan_no . " tidak boleh melebihi bobotnya (" . $bobot . ").");
+                    }
+                },
+            ],
+            'kegiatan_detail.*.plan_start' => ['nullable', 'date'],
+            'kegiatan_detail.*.plan_end' => ['nullable', 'date'],
+            'kegiatan_detail.*.actual_start' => ['nullable', 'date'],
+            'kegiatan_detail.*.actual_end' => ['nullable', 'date'],
+            'kegiatan_detail.*.keterangan' => ['nullable', 'string'],
+            'kegiatan_detail.*.pic' => ['nullable', 'string'],
+            'kegiatan_detail.*.__original_path' => ['required', 'string'], // Hidden field untuk path asli
         ]);
 
         $data_proyek = data_proyek::findOrFail($id);
-        $data_proyek->kegiatan_detail = $data['kegiatan_detail'];
+        // Mendekode kegiatan_detail yang ada di DB untuk mendapatkan struktur bersarang asli
+        $nested_kegiatan_detail = json_decode($data_proyek->kegiatan_detail, true) ?? [];
 
-        $totalBobot = collect($data['kegiatan_detail'])->sum('bobot');
-        $totalProgress = collect($data['kegiatan_detail'])->sum(function ($item) {
-            return ($item['bobot'] * $item['progress']) / 100;
-        });
+        // Ubah array datar yang disubmit menjadi koleksi dengan kunci original_path
+        $submitted_flat_data = collect($validatedData['kegiatan_detail'])->keyBy('__original_path');
 
-        $progresPersen = $totalBobot ? ($totalProgress / $totalBobot) * 100 : 0;
-        $data_proyek->progres = round($progresPersen, 2);
+        // Fungsi untuk memperbarui struktur bersarang asli dengan data yang disubmit
+        $updateNested = function (&$items, $parentPath = '') use (&$updateNested, $submitted_flat_data) {
+            foreach ($items as $key => &$item) { // Gunakan & untuk referensi agar bisa memodifikasi array asli
+                $currentPath = $parentPath === '' ? (string) $key : $parentPath . '.' . $key;
 
-        if ($progresPersen == 0) {
+                // Jika item ini ada di data yang disubmit (berdasarkan original_path)
+                if ($submitted_flat_data->has($currentPath)) {
+                    $submittedItem = $submitted_flat_data->get($currentPath);
+
+                    // Hanya perbarui progres jika bukan kegiatan induk yang progresnya dihitung (no = 1)
+                    if ($item['no'] !== "1") {
+                        // Progres dibatasi oleh bobotnya sendiri
+                        $item['progress'] = min($item['bobot'], (float) ($submittedItem['progress'] ?? 0));
+                    }
+
+                    $item['plan_start'] = $submittedItem['plan_start'] ?? null;
+                    $item['plan_end'] = $submittedItem['plan_end'] ?? null;
+                    $item['actual_start'] = $submittedItem['actual_start'] ?? null;
+                    $item['actual_end'] = $submittedItem['actual_end'] ?? null;
+                    $item['keterangan'] = $submittedItem['keterangan'] ?? null;
+                    $item['pic'] = $submittedItem['pic'] ?? null;
+                }
+
+                // Jika ada sub-kegiatan, panggil rekursif
+                if (isset($item['sub']) && is_array($item['sub'])) {
+                    $updateNested($item['sub'], $currentPath);
+                }
+            }
+        };
+
+        // Terapkan pembaruan dari form ke struktur bersarang
+        $updateNested($nested_kegiatan_detail);
+
+        // Sekarang, hitung ulang progres kegiatan induk (khususnya "Pengerjaan Dokumen")
+        // setelah semua sub-kegiatan telah diperbarui
+        $recalculateParentProgress = function (&$items) use (&$recalculateParentProgress) {
+            foreach ($items as &$item) {
+                if (isset($item['sub']) && is_array($item['sub']) && !empty($item['sub']) && $item['no'] === "1") {
+                    $recalculateParentProgress($item['sub']); // Rekursif hitung anak-anak terlebih dahulu
+
+                    // Logika: Progres Pengerjaan Dokumen adalah JUMLAH progres sub-kegiatan, dibatasi oleh bobotnya sendiri
+                    $sumOfSubProgresses = 0;
+                    foreach ($item['sub'] as $subItem) {
+                        $sumOfSubProgresses += ($subItem['progress'] ?? 0);
+                    }
+                    // Progres dibatasi oleh bobot kegiatan induk (misal: 20 untuk Pengerjaan Dokumen)
+                    $item['progress'] = min($item['bobot'], round($sumOfSubProgresses, 2));
+                }
+            }
+        };
+        $recalculateParentProgress($nested_kegiatan_detail);
+
+
+        // Encode struktur bersarang yang sudah diperbarui kembali ke JSON
+        $data_proyek->kegiatan_detail = json_encode($nested_kegiatan_detail);
+
+        // --- Perubahan Logika Perhitungan Progres Proyek Keseluruhan ---
+        // Progres proyek keseluruhan adalah penjumlahan progres dari setiap kegiatan utama (level teratas)
+        $totalProjectProgress = 0;
+        foreach ($nested_kegiatan_detail as $item) {
+            $totalProjectProgress += ($item['progress'] ?? 0);
+        }
+
+        // Pastikan total progres proyek tidak melebihi 100
+        $data_proyek->progres = min(100, round($totalProjectProgress, 2));
+
+        // Menentukan status proyek berdasarkan progres keseluruhan
+        if ($data_proyek->progres == 0) {
             $data_proyek->status = 'Not Started';
-        } elseif ($progresPersen < 100) {
+        } elseif ($data_proyek->progres < 100) {
             $data_proyek->status = 'On Progress';
         } else {
             $data_proyek->status = 'Completed';
         }
-
-        $data_proyek->keterangan = $data['kegiatan_detail'][0]['keterangan'] ?? '-';
 
         $data_proyek->save();
 
