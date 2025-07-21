@@ -28,6 +28,3 @@ class data_proyek extends Model
         'kegiatan_detail' // jika ada
     ];
 }
-
-
-

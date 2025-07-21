@@ -16,7 +16,7 @@
                 <div class="card-body">
                     <table class="table table-responsive table-bordered table-hovered">
                         <thead>
-                             <tr>
+                            <tr>
                                 <th>No</th>
                                 <th>Nomor CR</th>
                                 <th>Owner</th>
@@ -31,14 +31,14 @@
                                 <th>Progress</th>
                                 <th>Status</th>
                                 <th>Nomor Catatan Permintaan</th>
-                                {{-- <th>Aksi</th> --}}
+                                <th>Aksi</th>
                             </tr>
                         </thead>
                         
                         @if (count($data_proyeks)<1)
                         <tbody>
                             <tr>
-                                <td colspan="14">
+                                <td colspan="15">
                                     <p class="pt-3 text-center">tidak ada data</p>
                                 </td>
                             </tr>
@@ -47,7 +47,8 @@
                         <tbody>
                             @foreach ($data_proyeks as $item)
                             <tr>
-                                <td>{{ $item->id }}</td>
+                                {{-- Menggunakan $loop->iteration untuk nomor urut yang berurutan --}}
+                                <td>{{ $loop->iteration }}</td>
                                 <td>
                                     <a href="{{ route('data_proyek.kegiatan_detail', $item->id) }}">
                                         {{ $item->nomor_cr }}
@@ -59,29 +60,51 @@
                                 <td>{{ $item->target_disepakati }}</td>
                                 <td>{{ $item->target_kesepakatan }}</td>
                                 <td>{{ $item->detail_pengembangan }}</td>
-                                <td>{{ $item->pic_perencana }}</td>
-                                <td>{{ $item->pic_pelaksana }}</td>
+                                <td>
+                                    @php
+                                        $picPlan = $item->pic_perencana;
+                                        $decodedPicPlan = json_decode($picPlan, true);
+                                        if (is_array($decodedPicPlan)) {
+                                            echo implode(', ', $decodedPicPlan);
+                                        } else {
+                                            echo $picPlan; // Jika bukan JSON array, tampilkan apa adanya (asumsi sudah string koma)
+                                        }
+                                    @endphp
+                                </td>
+                                <td>
+                                    @php
+                                        $picDev = $item->pic_pelaksana;
+                                        $decodedPicDev = json_decode($picDev, true);
+                                        if (is_array($decodedPicDev)) {
+                                            echo implode(', ', $decodedPicDev);
+                                        } else {
+                                            echo $picDev; // Jika bukan JSON array, tampilkan apa adanya (asumsi sudah string koma)
+                                        }
+                                    @endphp
+                                </td>
                                 <td>{{ $item->keterangan }}</td>
                                 <td>{{ number_format($item->progres, 2) }}%</td>
                                 <td>{{ $item->status }}</td>
                                 <td>{{ $item->nomor_catatan_permintaan }}</td>
-                                {{-- <td>
+                                <td>
                                     <div class="d-flex">
-                                        <a href="/data_proyek/{id}"class="d-inline-block mr-2 btn btn-sm btn-warning">
+                                        {{-- Edit Button --}}
+                                        <a href="/data_proyek/{{ $item->id }}" class="d-inline-block mr-2 btn btn-sm btn-warning">
                                             <i class="fas fa-pen"></i>
-                                        </a>
-                                        <a href="/data_proyek/{id}"class="btn btn-sm btn-danger">
+                                        </a>                                        
+                                        <!-- Tombol Delete -->
+                                        <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#delete{{ $item->id }}">
                                             <i class="fas fa-eraser"></i>
-                                        </a>
+                                        </button>
                                     </div>
-                                </td> --}}
-                                
+                                </td>
                             </tr>
+                            @include('pages.data_proyek.delete')
                             @endforeach
                         </tbody>
                         @endif
                         
-                    </table>                    
+                    </table>                
                 </div>
             </div>
         </div>

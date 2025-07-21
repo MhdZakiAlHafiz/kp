@@ -32,8 +32,9 @@ class data_proyekController extends Controller
             'target_disepakati' => ['required'],
             'target_kesepakatan' => ['required'],
             'detail_pengembangan' => ['required'],
-            'pic_perencana' => ['nullable'],
-            'pic_pelaksana' => ['nullable'],
+            // Validasi untuk array checkbox, bisa kosong jika tidak ada yang dipilih
+            'pic_perencana' => ['nullable', 'array'],
+            'pic_pelaksana' => ['nullable', 'array'],
             'keterangan' => ['nullable'],
             'progres' => ['nullable', 'numeric', 'between:0,100'],
             'nomor_catatan_permintaan' => ['nullable'],
@@ -44,6 +45,11 @@ class data_proyekController extends Controller
         $count = data_proyek::where('nomor_cr', 'LIKE', '%/' . $data['jenis_surat'] . '/TSI/' . $tahun)->count();
         $nextNumber = str_pad($count + 1, 2, '0', STR_PAD_LEFT);
         $data['nomor_cr'] = $nextNumber . '/' . $data['jenis_surat'] . '/TSI/' . $tahun;
+
+        // Mengkonversi array PIC menjadi string yang dipisahkan koma
+        $data['pic_perencana'] = is_array($data['pic_perencana']) ? implode(', ', $data['pic_perencana']) : null;
+        $data['pic_pelaksana'] = is_array($data['pic_pelaksana']) ? implode(', ', $data['pic_pelaksana']) : null;
+
 
         // Menentukan status berdasarkan progres awal
         $progress = $data['progres'] ?? 0;
@@ -179,7 +185,8 @@ class data_proyekController extends Controller
                     if (!empty($data_proyek->pic_pelaksana)) {
                         $pic_parts[] = $data_proyek->pic_pelaksana;
                     }
-                    $item['pic'] = implode(', ', $pic_parts);
+                    // Pastikan tidak ada duplikasi nama jika PIC Plan dan PIC Dev memiliki nama yang sama
+                    $item['pic'] = implode(', ', array_unique($pic_parts));
                 }
                 // --- Akhir Perubahan Baru ---
             }

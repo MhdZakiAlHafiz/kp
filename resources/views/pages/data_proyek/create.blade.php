@@ -86,16 +86,44 @@
                         <textarea name="detail_pengembangan" class="form-control" rows="3" required></textarea>
                     </div>
 
+                    {{-- PIC Perencana Checkbox Group --}}
                     <div class="form-group mb-2">
                         <label>PIC Plan<span class="text-danger">*</span></label>
-                        <input type="text" name="pic_perencana" class="form-control" placeholder="Pisahkan dengan koma jika lebih dari satu">
-                        <small class="text-muted">Contoh: Ronaldy, Lutfi</small>
+                        <div>
+                            @php
+                                $picPerencanaOptions = [
+                                                            'Ronaldy', 'Lutfi', 'Wildan', 'Ori', 'Bima',
+                                                            'Koiri', 'Ardi', 'Nanda', 'Fikri', 'Rizky', 'Dinda', 'Andi', 'Tari', 'Fajar',
+                                                            'Mega', 'Putra', 'Salma', 'Iqbal', 'Novi'
+                                                        ];
+                            @endphp
+                            @foreach($picPerencanaOptions as $pic)
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" id="pic_perencana_{{ Str::slug($pic) }}" name="pic_perencana[]" value="{{ $pic }}">
+                                    <label class="form-check-label" for="pic_perencana_{{ Str::slug($pic) }}">{{ $pic }}</label>
+                                </div>
+                            @endforeach
+                        </div>
                     </div>
 
+                    {{-- PIC Pelaksana Checkbox Group --}}
                     <div class="form-group mb-2">
                         <label>PIC Dev<span class="text-danger">*</span></label>
-                        <input type="text" name="pic_pelaksana" class="form-control" placeholder="Pisahkan dengan koma jika lebih dari satu">
-                        <small class="text-muted">Contoh: Wildan, Ori</small>
+                        <div>
+                            @php
+                                $picPelaksanaOptions = [
+                                                            'Ronaldy', 'Lutfi', 'Wildan', 'Ori', 'Bima',
+                                                            'Koiri', 'Ardi', 'Nanda', 'Fikri', 'Rizky', 'Dinda', 'Andi', 'Tari', 'Fajar',
+                                                            'Mega', 'Putra', 'Salma', 'Iqbal', 'Novi'
+                                                        ];
+                            @endphp
+                            @foreach($picPelaksanaOptions as $pic)
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" id="pic_pelaksana_{{ Str::slug($pic) }}" name="pic_pelaksana[]" value="{{ $pic }}">
+                                    <label class="form-check-label" for="pic_pelaksana_{{ Str::slug($pic) }}">{{ $pic }}</label>
+                                </div>
+                            @endforeach
+                        </div>
                     </div>
 
                     <div class="form-group mb-2">
@@ -108,7 +136,7 @@
                         <input type="number" name="progres" class="form-control" step="0.01" max="100" min="0" placeholder="0 - 100%" value="0"  readonly required>
                     </div>
 
-                   <div class="form-group mb-2">
+                    <div class="form-group mb-2">
                         <label>Status<span class="text-danger">*</span></label>
                         <select class="form-control" disabled>
                             <option value="Not Started" selected>Not Started</option>
